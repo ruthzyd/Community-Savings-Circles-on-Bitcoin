@@ -14,8 +14,10 @@
 (define-constant err-circle-active (err u110))
 (define-constant err-invalid-params (err u111))
 (define-constant err-payout-failed (err u112))
+(define-constant err-contract-paused (err u113))
 
 (define-data-var circle-nonce uint u0)
+(define-data-var contract-paused bool false)
 
 (define-map circles
   uint
@@ -95,6 +97,7 @@
     (
       (new-circle-id (+ (var-get circle-nonce) u1))
     )
+    (asserts! (not (var-get contract-paused)) err-contract-paused)
     (asserts! (and (> max-members u1) (> contribution-amount u0) (> payout-interval u0)) err-invalid-params)
     (map-set circles new-circle-id {
       creator: tx-sender,
@@ -119,6 +122,7 @@
       (member-info (map-get? circle-members { circle-id: circle-id, member: tx-sender }))
       (current-members (get total-members circle))
     )
+    (asserts! (not (var-get contract-paused)) err-contract-paused)
     (asserts! (is-none member-info) err-already-member)
     (asserts! (< current-members (get max-members circle)) err-circle-full)
     (map-set circle-members
@@ -140,6 +144,7 @@
     (
       (circle (unwrap! (get-circle circle-id) err-circle-not-found))
     )
+    (asserts! (not (var-get contract-paused)) err-contract-paused)
     (asserts! (is-eq tx-sender (get creator circle)) err-owner-only)
     (asserts! (is-eq (get total-members circle) (get max-members circle)) err-invalid-params)
     (asserts! (not (get is-active circle)) err-circle-active)
@@ -164,6 +169,7 @@
         round: current-round 
       }))
     )
+    (asserts! (not (var-get contract-paused)) err-contract-paused)
     (asserts! (get is-active circle) err-circle-not-active)
     (asserts! (is-none existing-contribution) err-already-contributed)
     (try! (stx-transfer? contribution-amount tx-sender (as-contract tx-sender)))
@@ -192,6 +198,7 @@
       (payout-amount (* (get contribution-amount circle) (get max-members circle)))
       (next-payout-block (+ (get start-block circle) (* (get payout-interval circle) (+ current-round u1))))
     )
+    (asserts! (not (var-get contract-paused)) err-contract-paused)
     (asserts! (get is-active circle) err-circle-not-active)
     (asserts! (is-eq member-position current-round) err-not-payout-time)
     (asserts! (>= stacks-block-height next-payout-block) err-not-payout-time)
@@ -220,6 +227,7 @@
       (circle (unwrap! (get-circle circle-id) err-circle-not-found))
       (current-round (get current-round circle))
     )
+    (asserts! (not (var-get contract-paused)) err-contract-paused)
     (asserts! (get is-active circle) err-circle-not-active)
     (asserts! (< (+ current-round u1) (get max-members circle)) err-invalid-params)
     (map-set circles circle-id (merge circle { current-round: (+ current-round u1) }))
@@ -242,5 +250,25 @@
       (circle (unwrap! (get-circle circle-id) (err err-circle-not-found)))
     )
     (ok (get total-pool circle))
+  )
+)
+
+(define-read-only (is-paused)
+  (ok (var-get contract-paused))
+)
+
+(define-public (pause-contract)
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (var-set contract-paused true)
+    (ok true)
+  )
+)
+
+(define-public (unpause-contract)
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (var-set contract-paused false)
+    (ok true)
   )
 )
